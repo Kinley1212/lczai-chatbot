@@ -80,15 +80,16 @@ def detect_menu(msg: str) -> str:
     return "main"
 
 
-def call_gemini_raw(prompt: str, max_tokens: int = 2048) -> str:
+def call_gemini_raw(prompt: str, max_tokens: int = 2048,
+                    disable_thinking: bool = False) -> str:
     """單輪呼叫 Gemini（無歷史）"""
+    cfg_kwargs: dict = dict(temperature=0.7, max_output_tokens=max_tokens)
+    if disable_thinking:
+        cfg_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
     response = gemini_client.models.generate_content(
         model=GEMINI_MODEL,
         contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
-        config=types.GenerateContentConfig(
-            temperature=0.7,
-            max_output_tokens=max_tokens,
-        ),
+        config=types.GenerateContentConfig(**cfg_kwargs),
     )
     return response.text
 
@@ -234,86 +235,153 @@ def analyze():
 
     full_name = surname + name
 
-    # ── 2. RAG 搜尋（生肖 + 問題關鍵字）──
-    rag_query = f"屬{bazi['shengxiao']} {question}"
-    context   = rag.get_context(rag_query, top_k=2)
+    # ── 2. RAG 搜尋：六主題各取一塊原書內容（直接回傳，不經 Gemini 改寫）──
+    shengxiao = bazi['shengxiao']
+    topic_map = [
+        ("整體運勢", "overall"),
+        ("財運",     "wealth"),
+        ("事業",     "career"),
+        ("感情",     "love"),
+        ("健康",     "health"),
+        ("化解建議", "remedy"),
+    ]
+    rag_sections: dict = {}
+    context_parts: list = []
+    seen_ids: set = set()
 
-    # ── 3. 組合分析 Prompt ──
-    hour_pillar_str = f"、時柱{bazi['hour_pillar']}" if bazi.get("hour_pillar") else ""
+    for topic_zh, topic_key in topic_map:
+        results = rag.search(f"屬{shengxiao} {topic_zh}", top_k=5)
+        chunk_text = ""
+        for chunk in results:
+            cid = chunk.get("id", id(chunk))
+            if cid in seen_ids:
+                continue
+            if chunk.get("zodiac") == shengxiao and chunk.get("topic") == topic_zh:
+                seen_ids.add(cid)
+                chunk_text = chunk["text"]
+                context_parts.append(f"【{topic_zh}｜屬{shengxiao}】\n{chunk_text}")
+                break
+        if not chunk_text:
+            for chunk in results:
+                cid = chunk.get("id", id(chunk))
+                if cid not in seen_ids and chunk.get("zodiac") == shengxiao:
+                    seen_ids.add(cid)
+                    chunk_text = chunk["text"]
+                    context_parts.append(f"【{topic_zh}｜屬{shengxiao}】\n{chunk_text}")
+                    break
+        rag_sections[topic_key] = chunk_text
 
-    prompt = f"""你是李丞責博士，現在為用戶提供2026丙午年個人運勢分析。
+    context = "\n\n".join(context_parts)
+
+    # ── 3. 計算五行強弱摘要 ──
+    wuxing = bazi["wuxing"]
+    wuxing_parts = []
+    for elem, cnt in wuxing.items():
+        if cnt == 0:
+            wuxing_parts.append(f"缺{elem}")
+        elif cnt >= 3:
+            wuxing_parts.append(f"{elem}旺")
+    wuxing_summary = "、".join(wuxing_parts) if wuxing_parts else "五行較為均衡"
+    wuxing_detail = " ".join(f"{e}{wuxing.get(e,0)}" for e in ["金","木","水","火","土"])
+
+    hour_pillar_str = f" {bazi['hour_pillar']}" if bazi.get("hour_pillar") else ""
+    bazi_str = f"{bazi['year_pillar']} {bazi['month_pillar']} {bazi['day_pillar']}{hour_pillar_str}"
+
+    # ── 4. 組合 Prompt（七段：六運勢 + 問題解答）──
+    prompt = f"""你是李丞責博士本人，現在為用戶提供2026丙午年個人運勢分析。
 
 用戶資料：
-- 姓名：{full_name}
-- 性別：{gender}
-- 生肖：屬{bazi['shengxiao']}
-- 八字：{bazi['bazi_string']}（年柱{bazi['year_pillar']}、月柱{bazi['month_pillar']}、日柱{bazi['day_pillar']}{hour_pillar_str}）
-- 農曆：{bazi['lunar_date']}
+- 姓名：{full_name}（{gender}）
+- 出生：{bazi['lunar_date']}，生肖屬{shengxiao}
+- 八字四柱：{bazi_str}
+- 五行狀況：{wuxing_summary}（{wuxing_detail}）
 - 用戶問題：{question}
 
-參考資料（來自李丞責2026全書）：
+【書本參考資料】（以下內容來自李丞責2026全書，是分析的最高依據）：
 {context}
 
-請根據以上資料，以李丞責博士第一人稱，用繁體中文書面語，
-為{full_name}提供詳細的2026年運勢分析。
+請根據以上資料，以李丞責博士第一人稱，用繁體中文書面語，為{full_name}提供2026年個人運勢分析。
 
-必須嚴格按以下格式輸出六個段落，每段80-100字（精簡有力），缺一不可：
+分析原則：
+1. 以書本生肖運勢為主軸和最高依據
+2. 在此基礎上，結合用戶的八字四柱和五行狀況，提供個人化的補充分析
+3. 如果八字五行與生肖運勢方向一致，可加強說明
+4. 如果八字五行與生肖運勢有出入，以生肖運勢為準，用融合的語言表達，例如「雖然你的八字根基如此，但今年的流年氣場⋯⋯」，絕對不可以直接說兩者矛盾或衝突
+5. 引用書本中的具體星曜名稱（如唐符、天廚、歲破等），增加可信度
 
-SECTION_整體運勢
-（整體氣場，本年吉凶星曜）
+必須嚴格按以下格式輸出七個部分，不可增刪標題：
 
-SECTION_財運
-（正偏財走勢，投資建議）
+【整體運勢】
+根據生肖流年運勢，結合八字日主強弱，說明整體氣場走向。150-200字。
 
-SECTION_事業
-（事業機遇，需把握時機）
+重要寫作規則：
+- 【整體運勢】可以提及星曜名稱（如祿勳、擎天、病符等）
+- 以下六個部分絕對不可提及任何星曜名稱，無論用何種標點符號（【】「」()等）均不可。只描述實際影響，例如說「收入有望增加」而非「有祿勳入命」，說「需注意高危活動」而非「有亡神」，說「有機會獲得重要職責」而非「有擎天」：
+  【財運分析】【事業分析】【感情分析】【健康提示】【化解建議】【問題解答】
 
-SECTION_感情
-（姻緣或夫妻關係）
+【財運分析】
+以書本財運指引為主，結合五行喜忌，說明進財方向和注意事項。150-200字。
 
-SECTION_健康
-（注意事項，養生建議）
+【事業分析】
+以書本事業運勢為主，結合四柱特質，說明發展方向和把握時機。150-200字。
 
-SECTION_化解建議
-（開運化煞方法，方位擺設）
+【感情分析】
+以書本感情運勢為主，結合八字中的感情宮位特質，提供建議。150-200字。
 
-嚴格要求：
-1. 每段控制在80-100字，不可超過，必須精簡
-2. 必須輸出全部六個SECTION，不可省略
-3. 有實質分析，不可說「建議預約諮詢」
-4. 末尾加：「（本內容以李丞責著作及玄學原理為依據，玄學僅供參考。）」"""
+【健康提示】
+以書本健康警示為主，結合五行缺失，說明需要注意的身體部位。150-200字。
 
-    # ── 4. 呼叫 Gemini ──
+【化解建議】
+以書本的化解方法為主，結合五行補救，提供具體開運建議。150-200字。
+
+【問題解答】
+針對用戶問題「{question}」，結合以上所有分析，給出深入詳盡的回答。300-400字，分2-3個要點展開。
+嚴格禁止在此段提及任何星曜名稱，包括但不限於：祿勳、擎天、病符、亡神、的煞、大耗、天解、解神、豹尾、天狗、吊客、月煞、浮沉、血刃、天廚、唐符、歲破等，即使加任何括號或標點均不可。只說「收入有望增加」「有機會晉升」「需注意健康」等實際影響。
+末尾加：「（本內容以李丞責著作及八字五行原理為依據，玄學僅供參考。如需深入個人命盤分析，歡迎預約李丞責博士親身批算。）」"""
+
+    # ── 5. 呼叫 Gemini ──
     t0 = time.time()
     try:
-        raw_reply = call_gemini_raw(prompt, max_tokens=6000)
+        raw_reply = call_gemini_raw(prompt, max_tokens=5000, disable_thinking=True)
     except Exception as e:
         return jsonify({"error": f"Gemini API 錯誤：{e}"}), 500
     elapsed = round(time.time() - t0, 2)
 
-    # ── 5. 解析分段 ──
-    sections = _parse_fortune_sections(raw_reply)
+    # ── 6. 解析輸出（【標題】格式，清除 markdown）──
+    raw_reply = re.sub(r"\*+", "", raw_reply)
+
+    def _extract(text: str, key: str) -> str:
+        # 只在行首的【才視為新節點，避免正文內的【星曜】被截斷
+        m = re.search(rf"【{key}】\s*\n(.*?)(?=\n【|\Z)", text, re.S)
+        return m.group(1).strip() if m else ""
+
+    gemini_sections = {
+        "overall": _extract(raw_reply, "整體運勢"),
+        "wealth":  _extract(raw_reply, "財運分析"),
+        "career":  _extract(raw_reply, "事業分析"),
+        "love":    _extract(raw_reply, "感情分析"),
+        "health":  _extract(raw_reply, "健康提示"),
+        "remedy":  _extract(raw_reply, "化解建議"),
+    }
+    question_answer = _extract(raw_reply, "問題解答")
 
     return jsonify({
-        "name":         full_name,
-        "shengxiao":    bazi["shengxiao"],
-        "bazi":         bazi["bazi_string"],
-        "year_pillar":  bazi["year_pillar"],
-        "month_pillar": bazi["month_pillar"],
-        "day_pillar":   bazi["day_pillar"],
-        "hour_pillar":  bazi.get("hour_pillar"),
-        "lunar":        bazi["lunar_date"],
-        "wuxing":       bazi["wuxing"],
-        "fortune": {
-            "overall": sections["overall"],
-            "wealth":  sections["wealth"],
-            "career":  sections["career"],
-            "love":    sections["love"],
-            "health":  sections["health"],
-        },
-        "advice":      sections["advice"],
-        "email_sent":  False,
-        "elapsed":     elapsed,
+        "name":            full_name,
+        "shengxiao":       bazi["shengxiao"],
+        "bazi":            bazi["bazi_string"],
+        "year_pillar":     bazi["year_pillar"],
+        "month_pillar":    bazi["month_pillar"],
+        "day_pillar":      bazi["day_pillar"],
+        "hour_pillar":     bazi.get("hour_pillar"),
+        "lunar":           bazi["lunar_date"],
+        "wuxing":          bazi["wuxing"],
+        "wuxing_summary":  wuxing_summary,
+        "rag_sections":    rag_sections,
+        "gemini_sections": gemini_sections,
+        "question":        question,
+        "question_answer": question_answer,
+        "email_sent":      False,
+        "elapsed":         elapsed,
     })
 
 

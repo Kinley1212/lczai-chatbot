@@ -72,7 +72,9 @@ def calculate_bazi(year: int, month: int, day: int,
     year_gz  = lunar.getYearInGanZhi()
     month_gz = lunar.getMonthInGanZhi()
     day_gz   = lunar.getDayInGanZhi()
-    shengxiao = lunar.getYearShengXiao()
+    _sx_trad = {"鼠":"鼠","牛":"牛","虎":"虎","兔":"兔","龙":"龍","蛇":"蛇",
+                "马":"馬","羊":"羊","猴":"猴","鸡":"雞","狗":"狗","猪":"豬"}
+    shengxiao = _sx_trad.get(lunar.getYearShengXiao(), lunar.getYearShengXiao())
 
     # 時柱
     hour_gz = None
