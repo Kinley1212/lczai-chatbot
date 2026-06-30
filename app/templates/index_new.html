@@ -137,7 +137,7 @@ textarea{resize:vertical;min-height:70px;max-height:140px;line-height:1.5}
 .submit-btn{
   width:100%;padding:13px;margin-top:8px;
   border-radius:10px;border:none;cursor:pointer;
-  background:linear-gradient(135deg,var(--red3),var(--red));
+  background:linear-gradient(135deg,var(--gold3),var(--gold));
   color:#fff;font-size:.95rem;font-weight:700;
   letter-spacing:1px;font-family:inherit;
   transition:opacity .2s,transform .1s;
@@ -384,9 +384,6 @@ footer{
 
 <!-- ══ Hero ══ -->
 <section id="hero">
-  <div class="cloud c1">雲</div>
-  <div class="cloud c2">☁</div>
-
   <div class="hero-inner">
     <!-- 左側人像照片 + 名字 -->
     <div class="portrait-wrap">
@@ -428,7 +425,7 @@ footer{
           </div>
           <div class="form-group" style="margin-bottom:0">
             <label for="birthtime">出生時間 <span class="opt">（選填）</span></label>
-            <input type="time" id="birthtime" placeholder="--:--"/>
+            <input type="text" id="birthtime" placeholder="選擇時間（選填）" readonly style="cursor:pointer"/>
           </div>
         </div>
 
@@ -556,9 +553,11 @@ footer{
   </div>
 
   <p class="about-bio">
-    李丞責博士出身命相世家，祖孫三代真傳，精通紫微斗數、奇門遁甲、九宮飛星風水、塔羅牌及卜卦等多門術數。
-    三十五年來，曾為滙豐銀行、恒生銀行、中國平安、萬達地產等逾五百家知名企業提供玄學顧問服務，
-    並接受各大媒體訪問逾千次。現設辦公室於香港銅鑼灣，提供個人及企業玄學諮詢。
+    李丞責博士十九歲已登上風水師之職，有全香港最年輕風水師之美譽。祖孫三代真傳命相、風水，其父為高州名師李發文，
+    博士十四歲起已隨父廣遊名山大川、尋龍點穴。從事玄學逾三十五年，曾出版玄學雜誌，主持專欄、書作、電台、電視及電影，
+    準確預測世界大事，深受熱捧。為第十五屆世界傑出華人獎得主，法國北歐大學、中國周易研究所高級院士。
+    曾為中國平安、中國建設銀行、萬達地產、香港上海滙豐銀行（HSBC）、恒基地產、香港賽馬會等逾百家知名企業提供玄學顧問服務。
+    現設辦公室於香港銅鑼灣禮頓道23號均峰商業大廈，提供個人及企業玄學諮詢。
   </p>
 
 </section>
@@ -768,6 +767,15 @@ flatpickr("#birthdate", {
   locale: "zh_tw",
   dateFormat: "Y-m-d",
   maxDate: "today",
+  disableMobile: true,
+  allowInput: false,
+});
+flatpickr("#birthtime", {
+  locale: "zh_tw",
+  enableTime: true,
+  noCalendar: true,
+  time_24hr: true,
+  dateFormat: "H:i",
   disableMobile: true,
   allowInput: false,
 });
