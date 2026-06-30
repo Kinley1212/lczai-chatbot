@@ -9,6 +9,10 @@ import os
 import re
 import sys
 import time
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from datetime import date
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -27,6 +31,12 @@ from bazi import calculate_bazi
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL   = "gemini-2.5-flash"
 gemini_client  = genai.Client(api_key=GEMINI_API_KEY)
+
+# ── SMTP 設定 ────────────────────────────────────────────
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASS = os.getenv("SMTP_PASS", "")
 
 # ── 載入 system prompt ──────────────────────────────────
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -199,6 +209,101 @@ def chat():
     return jsonify({"reply": reply, "menu": detect_menu(user_msg), "elapsed": elapsed})
 
 
+def send_report_email(to_addr: str, full_name: str, shengxiao: str,
+                      bazi_str: str, lunar: str, wuxing_summary: str,
+                      sections: dict, question: str, question_answer: str) -> bool:
+    """發送運勢報告至用戶郵箱，返回是否成功。"""
+    if not all([SMTP_HOST, SMTP_USER, SMTP_PASS, to_addr]):
+        return False
+
+    wuxing_map = {"金": "🥇", "木": "🌿", "水": "💧", "火": "🔥", "土": "🪨"}
+
+    def p(text: str) -> str:
+        return "".join(f"<p>{line}</p>" for line in text.splitlines() if line.strip())
+
+    qa_block = ""
+    if question and question_answer:
+        qa_block = f"""
+        <div style="margin-top:24px;padding:20px 24px;background:#fff8f0;border-left:4px solid #990f23;border-radius:8px;">
+          <h3 style="color:#990f23;margin:0 0 8px;">❓ 您的問題解答</h3>
+          <p style="color:#555;font-style:italic;margin:0 0 12px;">「{question}」</p>
+          {p(question_answer)}
+        </div>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-Hant">
+<head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="margin:0;padding:0;background:#f5f0eb;font-family:'PingFang TC','Microsoft JhengHei',sans-serif;color:#333;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0eb;padding:32px 0;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.1);">
+
+  <!-- Header -->
+  <tr><td style="background:linear-gradient(135deg,#7a0a1b,#990f23);padding:36px 32px;text-align:center;">
+    <p style="margin:0 0 4px;color:rgba(211,168,98,.8);font-size:13px;letter-spacing:2px;">李丞責博士</p>
+    <h1 style="margin:0;color:#fff;font-size:22px;letter-spacing:1px;">2026馬年個人運程分析報告</h1>
+    <p style="margin:8px 0 0;color:rgba(255,255,255,.7);font-size:13px;">結合紫微斗數・奇門遁甲・玄學智慧</p>
+  </td></tr>
+
+  <!-- 命盤資料 -->
+  <tr><td style="padding:28px 32px 0;">
+    <h2 style="color:#990f23;font-size:15px;border-bottom:2px solid #f0e0c8;padding-bottom:8px;margin:0 0 16px;">▸ 命盤基本資料</h2>
+    <table width="100%" cellpadding="6" cellspacing="0">
+      <tr><td style="color:#888;width:90px;">姓名</td><td style="font-weight:700;">{full_name}</td>
+          <td style="color:#888;width:90px;">生肖</td><td style="font-weight:700;">屬{shengxiao}</td></tr>
+      <tr><td style="color:#888;">農曆</td><td colspan="3">{lunar}</td></tr>
+      <tr><td style="color:#888;">八字</td><td colspan="3">{bazi_str}</td></tr>
+      <tr><td style="color:#888;">五行</td><td colspan="3">{wuxing_summary}</td></tr>
+    </table>
+  </td></tr>
+
+  <!-- 六大運勢 -->
+  <tr><td style="padding:24px 32px 0;">
+    {''.join(f"""
+    <div style="margin-bottom:20px;">
+      <h3 style="color:#990f23;font-size:14px;margin:0 0 8px;padding:6px 12px;background:#fff5f5;border-radius:6px;">{icon} {title}</h3>
+      <div style="font-size:14px;line-height:1.8;color:#444;">{p(content)}</div>
+    </div>""" for icon, title, content in [
+        ("🌟","整體運勢", sections.get("overall","")),
+        ("💰","財運分析", sections.get("wealth","")),
+        ("💼","事業分析", sections.get("career","")),
+        ("❤️","感情分析", sections.get("love","")),
+        ("🌿","健康提示", sections.get("health","")),
+        ("✦","化解建議", sections.get("remedy","")),
+    ] if content)}
+  </td></tr>
+
+  <!-- 問題解答 -->
+  <tr><td style="padding:0 32px;">{qa_block}</td></tr>
+
+  <!-- Footer -->
+  <tr><td style="padding:28px 32px;text-align:center;border-top:1px solid #f0e0c8;margin-top:24px;">
+    <p style="margin:0;font-size:12px;color:#aaa;">玄學內容僅供參考，一切以個人判斷為準。</p>
+    <p style="margin:4px 0 0;font-size:12px;color:#aaa;">© 2026 李丞責中華風水文化基金會</p>
+  </td></tr>
+
+</table>
+</td></tr>
+</table>
+</body></html>"""
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"【李丞責博士】{full_name} 的2026馬年個人運程分析報告"
+    msg["From"]    = f"李丞責博士 <{SMTP_USER}>"
+    msg["To"]      = to_addr
+    msg.attach(MIMEText(html, "html", "utf-8"))
+
+    try:
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx, timeout=15) as server:
+            server.login(SMTP_USER, SMTP_PASS)
+            server.sendmail(SMTP_USER, to_addr, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[EMAIL ERROR] {e}", flush=True)
+        return False
+
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
     data = request.get_json(silent=True) or {}
@@ -364,6 +469,20 @@ def analyze():
     }
     question_answer = _extract(raw_reply, "問題解答")
 
+    email_sent = False
+    if email:
+        email_sent = send_report_email(
+            to_addr        = email,
+            full_name      = full_name,
+            shengxiao      = bazi["shengxiao"],
+            bazi_str       = bazi["bazi_string"],
+            lunar          = bazi["lunar_date"],
+            wuxing_summary = wuxing_summary,
+            sections       = gemini_sections,
+            question       = question,
+            question_answer= question_answer,
+        )
+
     return jsonify({
         "name":            full_name,
         "shengxiao":       bazi["shengxiao"],
@@ -379,7 +498,7 @@ def analyze():
         "gemini_sections": gemini_sections,
         "question":        question,
         "question_answer": question_answer,
-        "email_sent":      False,
+        "email_sent":      email_sent,
         "elapsed":         elapsed,
     })
 

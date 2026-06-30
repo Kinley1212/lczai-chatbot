@@ -684,7 +684,9 @@ function renderResult(data, fullName, email) {
   // 郵箱提示
   const emailNote = document.getElementById("email-note");
   if (email) {
-    emailNote.textContent = "✉ 報告將發送至：" + email;
+    emailNote.textContent = data.email_sent
+      ? "✉ 報告已發送至：" + email
+      : "✉ 郵件發送失敗，請確認郵箱地址是否正確";
     emailNote.style.display = "block";
   } else {
     emailNote.style.display = "none";
