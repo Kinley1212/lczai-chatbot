@@ -10,7 +10,11 @@ import re
 import sys
 import time
 import json
-import requests
+import socket
+import smtplib
+import ssl
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from datetime import date
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -30,9 +34,9 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL   = "gemini-2.5-flash"
 gemini_client  = genai.Client(api_key=GEMINI_API_KEY)
 
-# ── Resend 設定 ───────────────────────────────────────────
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
-RESEND_FROM    = "李丞責博士 <onboarding@resend.dev>"
+# ── Gmail SMTP ────────────────────────────────────────────
+GMAIL_USER = os.getenv("GMAIL_USER", "byondhk@gmail.com")
+GMAIL_PASS = os.getenv("GMAIL_PASS", "pvrhyewvwprfqmnx")
 
 # ── 載入 system prompt ──────────────────────────────────
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -208,8 +212,8 @@ def chat():
 def send_report_email(to_addr: str, full_name: str, shengxiao: str,
                       bazi_str: str, lunar: str, wuxing_summary: str,
                       sections: dict, question: str, question_answer: str) -> bool:
-    """使用 Resend API 發送運勢報告，返回是否成功。"""
-    if not RESEND_API_KEY or not to_addr:
+    """使用 Gmail SMTP 發送運勢報告，返回是否成功。"""
+    if not to_addr:
         return False
 
     def p(text: str) -> str:
@@ -281,27 +285,24 @@ def send_report_email(to_addr: str, full_name: str, shengxiao: str,
 </table>
 </body></html>"""
 
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = f"【李丞責博士】{full_name} 的2026馬年個人運程分析報告"
+    msg["From"]    = f"李丞責博士 <{GMAIL_USER}>"
+    msg["To"]      = to_addr
+    msg.attach(MIMEText(html, "html", "utf-8"))
+
     try:
-        resp = requests.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "from":    RESEND_FROM,
-                "to":      [to_addr],
-                "subject": f"【李丞責博士】{full_name} 的2026馬年個人運程分析報告",
-                "html":    html,
-            },
-            timeout=20,
-        )
-        if resp.status_code in (200, 201):
-            print(f"[EMAIL OK] 已發送至 {to_addr}", flush=True)
-            return True
-        else:
-            print(f"[EMAIL ERROR] {resp.status_code}: {resp.text}", flush=True)
-            return False
+        # 強制 IPv4 避免 Render 的 IPv6 路由問題
+        ip = socket.gethostbyname("smtp.gmail.com")
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP(ip, 587, timeout=20) as server:
+            server.ehlo("smtp.gmail.com")
+            server.starttls(context=ctx)
+            server.ehlo("smtp.gmail.com")
+            server.login(GMAIL_USER, GMAIL_PASS)
+            server.sendmail(GMAIL_USER, to_addr, msg.as_string())
+        print(f"[EMAIL OK] 已發送至 {to_addr}", flush=True)
+        return True
     except Exception as e:
         print(f"[EMAIL ERROR] {type(e).__name__}: {e}", flush=True)
         return False
@@ -309,31 +310,26 @@ def send_report_email(to_addr: str, full_name: str, shengxiao: str,
 
 @app.route("/test-email")
 def test_email():
-    """Resend API 發信測試"""
+    """Gmail SMTP 發信測試"""
     to = request.args.get("to", "")
     if not to:
         return jsonify({"error": "需要 ?to=收件人郵箱"}), 400
     import traceback
     try:
-        resp = requests.post(
-            "https://api.resend.com/emails",
-            headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "from":    RESEND_FROM,
-                "to":      [to],
-                "subject": "李丞責博士 · 郵件測試",
-                "html":    "<h1>測試成功</h1><p>郵件發送功能正常。</p>",
-            },
-            timeout=20,
-        )
-        return jsonify({
-            "status":   "success" if resp.status_code in (200, 201) else "error",
-            "http_code": resp.status_code,
-            "response":  resp.json() if resp.content else {},
-        })
+        ip = socket.gethostbyname("smtp.gmail.com")
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = "李丞責博士 · 郵件測試"
+        msg["From"]    = f"李丞責博士 <{GMAIL_USER}>"
+        msg["To"]      = to
+        msg.attach(MIMEText("<h1>測試成功</h1><p>郵件發送功能正常。</p>", "html", "utf-8"))
+        ctx = ssl.create_default_context()
+        with smtplib.SMTP(ip, 587, timeout=20) as server:
+            server.ehlo("smtp.gmail.com")
+            server.starttls(context=ctx)
+            server.ehlo("smtp.gmail.com")
+            server.login(GMAIL_USER, GMAIL_PASS)
+            server.sendmail(GMAIL_USER, to, msg.as_string())
+        return jsonify({"status": "success", "to": to})
     except Exception as e:
         return jsonify({"status": "error", "error": f"{type(e).__name__}: {e}",
                         "trace": traceback.format_exc()})

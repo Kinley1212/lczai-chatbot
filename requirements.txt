@@ -4,4 +4,3 @@ python-dotenv
 google-genai
 gunicorn
 lunar-python
-requests
