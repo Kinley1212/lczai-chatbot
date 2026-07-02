@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>李丞責博士 · 請輸入密碼</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:#faf7f3;
+  --card:#ffffff;
+  --red:#990f23;
+  --red2:#c41429;
+  --gold:#b8860b;
+  --gold2:#d4a820;
+  --gold3:#8b6510;
+  --border:rgba(153,15,35,.15);
+  --text:#1a0808;
+  --text2:#4a2828;
+  --text3:#9a7070;
+}
+
+body{
+  min-height:100vh;
+  background:var(--bg);
+  color:var(--text);
+  font-family:"PingFang TC","Hiragino Sans TC","Microsoft JhengHei",sans-serif;
+  -webkit-font-smoothing:antialiased;
+  display:flex;align-items:center;justify-content:center;
+  position:relative;overflow:hidden;
+}
+body::before{
+  content:"";position:absolute;inset:0;
+  background:
+    radial-gradient(ellipse 50% 60% at 0% 50%, rgba(153,15,35,.06) 0%, transparent 70%),
+    radial-gradient(ellipse 40% 50% at 100% 20%, rgba(184,134,11,.07) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 40% at 50% 100%, rgba(153,15,35,.04) 0%, transparent 60%);
+  pointer-events:none;
+}
+
+.login-card{
+  position:relative;z-index:1;
+  width:100%;max-width:360px;margin:24px;
+  background:var(--card);border:1px solid var(--border);
+  border-radius:16px;padding:40px 32px 32px;
+  box-shadow:0 8px 32px rgba(153,15,35,.1);
+  text-align:center;
+}
+.login-star{font-size:1.4rem;color:var(--gold);margin-bottom:12px}
+.login-portrait{
+  width:88px;height:88px;border-radius:50%;
+  object-fit:cover;margin:0 auto 16px;
+  border:3px solid rgba(211,168,98,.72);
+  box-shadow:0 6px 20px rgba(153,15,35,.15);
+  display:block;
+}
+.login-name{
+  font-size:1.05rem;font-weight:700;letter-spacing:1.5px;
+  background:linear-gradient(90deg,var(--gold),var(--gold2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  margin-bottom:4px;
+}
+.login-sub{font-size:.78rem;color:var(--text3);margin-bottom:28px;letter-spacing:.5px}
+
+form{display:flex;flex-direction:column;gap:14px}
+.form-group{display:flex;flex-direction:column;gap:6px;text-align:left}
+label{font-size:.78rem;color:var(--text2);letter-spacing:.3px}
+
+input[type=password]{
+  width:100%;padding:12px 14px;
+  background:#fff;border:1px solid rgba(153,15,35,.2);
+  border-radius:8px;color:var(--text);font-size:.95rem;
+  font-family:inherit;outline:none;letter-spacing:3px;
+  text-align:center;
+  transition:border-color .2s,box-shadow .2s;
+  -webkit-appearance:none;
+}
+input[type=password]::placeholder{letter-spacing:normal;color:var(--text3)}
+input[type=password]:focus{
+  border-color:rgba(153,15,35,.5);
+  box-shadow:0 0 0 3px rgba(153,15,35,.08);
+}
+
+.login-error{
+  color:var(--red2);font-size:.8rem;margin-top:-4px;
+}
+
+.login-btn{
+  width:100%;padding:13px;margin-top:4px;
+  border-radius:10px;border:none;cursor:pointer;
+  background:linear-gradient(135deg,var(--gold3),var(--gold));
+  color:#fff;font-size:.95rem;font-weight:700;
+  letter-spacing:1px;font-family:inherit;
+  transition:opacity .2s,transform .1s;
+}
+.login-btn:hover{opacity:.88;transform:translateY(-1px)}
+
+.login-footer{
+  margin-top:28px;font-size:.7rem;color:var(--text3);line-height:1.6;
+}
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="login-star">✦</div>
+  <img class="login-portrait" src="/static/portrait.png" alt="李丞責博士"/>
+  <div class="login-name">李丞責博士</div>
+  <div class="login-sub">2026馬年運勢分析 · 請輸入密碼進入</div>
+
+  <form method="POST">
+    <div class="form-group">
+      <label for="password">網站密碼</label>
+      <input type="password" id="password" name="password" placeholder="請輸入密碼" required autofocus/>
+    </div>
+    {% if error %}<div class="login-error">{{ error }}</div>{% endif %}
+    <button type="submit" class="login-btn">✦ 進入</button>
+  </form>
+
+  <div class="login-footer">玄學內容僅供參考，一切以個人判斷為準。<br/>© 2026 李丞責中華風水文化基金會</div>
+</div>
+
+</body>
+</html>

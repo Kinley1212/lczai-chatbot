@@ -15,7 +15,7 @@ import smtplib
 import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from datetime import date
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -24,7 +24,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 from google import genai
 from google.genai import types
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_cors import CORS
 from rag import RAGEngine
 from bazi import calculate_bazi
@@ -67,9 +67,48 @@ MENUS: dict[str, list[str]] = {
 # ── Flask App ──────────────────────────────────────────
 app = Flask(__name__)
 app.json.ensure_ascii = False
+app.secret_key = os.getenv("SECRET_KEY", "lczai-2026-site-gate-secret")
+app.permanent_session_lifetime = timedelta(days=30)
 CORS(app)
 
 rag = RAGEngine()
+
+# ── 網站密碼保護 ─────────────────────────────────────────
+SITE_PASSWORD = os.getenv("SITE_PASSWORD", "88888888")
+
+# 不需要登入即可訪問的路由（登入頁本身、靜態檔案、健康檢查）
+PUBLIC_ENDPOINTS = {"login", "static", "health"}
+# 前端 AJAX 呼叫的 API：未登入時回傳 401 JSON，而非導向登入頁
+JSON_ENDPOINTS = {"chat", "analyze", "menu", "test_email"}
+
+
+@app.before_request
+def require_login():
+    if request.endpoint in PUBLIC_ENDPOINTS:
+        return
+    if session.get("authenticated"):
+        return
+    if request.endpoint in JSON_ENDPOINTS:
+        return jsonify({"error": "請先登入"}), 401
+    return redirect(url_for("login", next=request.path))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        if request.form.get("password", "") == SITE_PASSWORD:
+            session.permanent = True
+            session["authenticated"] = True
+            return redirect(request.args.get("next") or url_for("index"))
+        error = "密碼錯誤，請重新輸入"
+    return render_template("login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.pop("authenticated", None)
+    return redirect(url_for("login"))
 
 
 # ── 工具函數 ───────────────────────────────────────────
